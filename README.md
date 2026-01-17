@@ -9,7 +9,7 @@
 
 # IPC Legal Chatbot
 
-## 📄 Overview
+## Overview
 
 - The IPC Legal Chatbot is a sophisticated Streamlit-based application designed to democratize access to legal information, specifically concerning the Indian Penal Code (IPC). It empowers users to quickly find simple and accurate explanations of IPC sections through an intuitive chat interface.
 
@@ -17,7 +17,7 @@
 
 - Data Coverage: The chatbot's knowledge base specifically covers IPC sections ranging from **121A to 511.**
 
-## ✨ Features
+## Features
 
 - Intelligent IPC Explanations: Get simple, easy-to-understand explanations for complex Indian Penal Code sections.
 
@@ -35,7 +35,7 @@
 
 - Comprehensive Logging: Detailed logging (to console and file) for monitoring and debugging, configured via logging_config.yaml.
 
-## 🚀 Getting Started
+## Getting Started
 
 You have multiple options to run the IPC Legal Chatbot: an Automated Setup (highly recommended for ease), a Manual Setup for more control, or a Docker Deployment for containerization.
 
@@ -64,7 +64,7 @@ Ensure you have the following installed on your system:
 Begin by cloning the project repository to your local machine:
 
 ```
-git clone https://github.com/Ashank007/ipc_legal_chatbot.git
+git clone https://github.com/ashankgupta/ipc_legal_chatbot.git
 cd ipc_legal_chatbot
 ```
 
@@ -81,7 +81,7 @@ ollama run llama3.1
 ```
 - This command will download the model if it's not already present and then start an interactive session. You can simply close this session (/bye) once the download is complete.
 
-## 🏃‍♀️ Running the Application
+## Running the Application
 
 You have three options to run the IPC Legal Chatbot:
 
@@ -176,7 +176,7 @@ docker run -p 8501:8501 legal_chatbot
 
 After running the command, open your web browser and navigate to http://localhost:8501. You should see the IPC Legal Chatbot interface.
 
-## 📂 Project Structure
+## Project Structure
 
 ```
 ipc_legal_chatbot/
@@ -199,7 +199,7 @@ ipc_legal_chatbot/
 └── README.md                   # This comprehensive project documentation
 ```
 
-## 👨‍💻 Usage
+## Usage
 
 - Open the App: Access the application in your web browser (typically at http://localhost:8501).
 
@@ -215,7 +215,7 @@ ipc_legal_chatbot/
 
 - Get Explanations: The chatbot will process your query, retrieve the most relevant IPC sections from its knowledge base, and generate a simplified explanation using the llama 3.1 model
 
-## ⚙️ Dependencies
+## Dependencies
 
 - Python 3.8+
 
@@ -233,7 +233,7 @@ ipc_legal_chatbot/
 
 Refer to requirements.txt for the complete and exact list of Python dependencies.
 
-## ❓ Frequently Asked Questions (FAQs)
+## Frequently Asked Questions (FAQs)
 
 #### Q What is the IPC Legal Chatbot, and what kind of information does it provide?
 
@@ -253,7 +253,7 @@ The chatbot uses llama 3.1, a powerful Large Language Model (LLM), to generate i
 You can update the chatbot's knowledge by modifying or replacing the legal_data.jsonl file located in the data/ directory of your project. The application is designed to automatically re-generate its FAISS index (ipc_faiss.index) and metadata (ipc_metadata.json) when it detects changes or missing files in data/ on startup. After updating legal_data.jsonl, simply restart the application (or rebuild/rerun your Docker container) for the changes to take effect.
 ```
 
-## 📝 Notes
+## Notes
 
 - Data Format: Ensure that legal_data.jsonl is correctly formatted with legal sections that the RAG pipeline can effectively process.
 
@@ -263,18 +263,11 @@ You can update the chatbot's knowledge by modifying or replacing the legal_data.
 
 - Logging: Application logs are configured via logging_config.yaml and are outputted to ipc_legal_chatbot.log as well as the console, aiding in debugging and monitoring.
 
-## 🤝 Contributing
+## Contributing
 
 - Contributions, issues, and feature requests are highly welcome! Feel free to check the issues page.
 
-## 📜 License
+## License
 
 - This project is open-source and available under the MIT License.
 
-📞 Contact
-
-- For any questions or inquiries, please reach out to:
-
-- [Email](ashankgupta.tech@gmail.com)
-
-- [LinkedIn](https://www.linkedin.com/in/ashank-gupta-/)
