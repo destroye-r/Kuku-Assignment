@@ -1,252 +1,80 @@
-import streamlit as st
+import os
+import json
+import re
 import faiss
 import numpy as np
-import ollama
 from sentence_transformers import SentenceTransformer, CrossEncoder
-import json
-import os
-import logging
-from typing import List, Tuple, Optional, Dict
-from src.config import Config
-from src.utils import parse_punishment_years
 
-logger = logging.getLogger(__name__)
+DEFAULT_RECORDS = [
+    {"id": "TENANT_01", "category": "Landlord & Security Deposit", "act": "Transfer of Property Act, 1882 & Indian Contract Act, 1872", "section": "Section 108(q) TPA & Section 73/74 Contract Act", "summary": "Upon expiration or termination of a lease and handover of vacant possession, the landlord must refund the security deposit. Deductions are generally restricted to documented unpaid rent, utility bills, or actual structural damage beyond normal wear and tear (routine repainting or deep cleaning cannot be arbitrarily deducted unless explicitly stated in the signed agreement).", "remedy": "1. Send a formal Legal Notice via Registered Post AD + Email demanding refund within 15 days with interest. 2. File a complaint before the State Rent Authority (if applicable) or file a Summary Suit under Order 37 of the Civil Procedure Code (CPC) in Small Causes/Civil Court.", "portal": "https://ecourts.gov.in / State Rent Authority"},
+    {"id": "TENANT_02", "category": "Landlord & Security Deposit", "act": "Model Tenancy Act, 2021 (and State Rent Control Acts)", "section": "Section 11 (Security Deposit Cap) & Section 20 (Refund on Vacation)", "summary": "Under the Model Tenancy framework (adopted across select states/UTs), residential security deposits are capped at two months' rent, and the landlord must refund the deposit at the time of taking over vacant possession after settling mutually verified arrears.", "remedy": "File an application before the District Rent Authority for recovery of unlawfully withheld security deposit and penalty.", "portal": "District Rent Authority Portal"},
+    {"id": "TENANT_03", "category": "Unlawful Eviction & Lockout by Landlord", "act": "Transfer of Property Act, 1882 & Specific Relief Act, 1963", "section": "Section 106 TPA (Notice Period) & Section 6 Specific Relief Act", "summary": "A landlord cannot forcibly evict a tenant, throw out belongings, or cut off essential utilities (water/electricity) without serving the mandatory notice period stipulated in the rental agreement (or 15 days' statutory notice for month-to-month leases under Section 106) and following due process of law.", "remedy": "Dial 112 for immediate police assistance against forceful lockout/utility disconnection, send an immediate cease-and-desist legal notice, and approach the Rent Controller or Civil Court for an injunction.", "portal": "Emergency 112 / Local Rent Controller"},
+    {"id": "CONSUMER_01", "category": "E-Commerce Refund Failure & Defective Product", "act": "Consumer Protection Act, 2019 & Consumer Protection (E-Commerce) Rules, 2020", "section": "Section 2(9) (Consumer Rights), Section 2(11) (Deficiency in Service), Section 2(47) (Unfair Trade Practice) & Rule 4/5 E-Commerce Rules", "summary": "Refusing to issue a refund for a defective, damaged, fake, or undelivered item—or delaying refund beyond promised timelines—constitutes Deficiency in Service and Unfair Trade Practice. Under E-Commerce Rules 2020, every platform must appoint a Grievance Officer who must acknowledge complaints within 48 hours and resolve them within 1 month.", "remedy": "1. Email the company's nodal Grievance Officer with order ID and unboxing photos/receipts. 2. Register a docket on the National Consumer Helpline (NCH 1915). 3. Send a final Legal Notice. 4. File an online consumer complaint on e-Jagriti (zero court fee for claims up to Rs 5 Lakhs).", "portal": "https://consumerhelpline.gov.in & https://e-jagriti.gov.in"},
+    {"id": "CONSUMER_02", "category": "EdTech / Gym / Service Subscription Refund Refusal", "act": "Consumer Protection Act, 2019", "section": "Section 2(46) (Unfair Contract) & Section 2(11) (Deficiency in Service)", "summary": "One-sided 'Strictly No Refund under Any Circumstances' clauses in pre-printed service, coaching, EdTech, or travel contracts are treated as Unfair Contracts under Section 2(46) when the service provider fails to deliver promised quality or cancels/alters services.", "remedy": "Demand proportionate refund via written Legal Notice citing Section 2(46) & 2(11) of CPA 2019, lodge a complaint on NCH (1915), and escalate to the District Consumer Commission via e-Jagriti.", "portal": "https://consumerhelpline.gov.in & https://e-jagriti.gov.in"},
+    {"id": "CONSUMER_03", "category": "Flight Cancellation / Airline Refund Delay", "act": "DGCA Civil Aviation Requirements (CAR) & Consumer Protection Act, 2019", "section": "DGCA CAR Section 3, Series M, Part II & Part IV", "summary": "When an airline cancels a flight or denies boarding, it must provide either an alternate flight or a full refund (plus statutory compensation ranging from Rs 5,000 to Rs 10,000 if cancelled less than 24 hours before departure without timely notice). Credit shells cannot be forced upon the passenger without explicit consent.", "remedy": "1. File a grievance on the Ministry of Civil Aviation AirSewa portal. 2. Escalate to National Consumer Helpline (1915) and e-Jagriti if unpaid within 30 days.", "portal": "https://airsewa.gov.in & https://consumerhelpline.gov.in"},
+    {"id": "WAGE_01", "category": "Unpaid Salary & Delayed Monthly Wages", "act": "Payment of Wages Act, 1936 & State Shops and Commercial Establishments Acts", "section": "Section 3 (Responsibility for Payment), Section 5 (Time of Payment) & Section 15 (Claims for Delayed Wages)", "summary": "Employers are legally bound to disburse earned monthly wages within 7 to 10 days after the wage period concludes. Withholding earned salary for periods already worked without lawful cause is illegal, and authorities can award compensation alongside the unpaid wages.", "remedy": "1. Send a formal Demand Notice to HR and Company Directors via email and speed post. 2. File an online industrial/wage dispute on the Ministry of Labour SAMADHAN portal or approach the local Labour Commissioner under the State Shops & Establishments Act.", "portal": "https://samadhan.labour.gov.in"},
+    {"id": "WAGE_02", "category": "Withheld Full & Final (FnF) Settlement & Relieving Letter", "act": "Indian Contract Act, 1872 & State Shops and Establishments Acts", "section": "Section 27 (Restraint of Trade) & Section 73 (Breach of Contract)", "summary": "Once an employee completes their notice period and hands over company assets, the employer cannot indefinitely withhold Full & Final (FnF) settlement pay or refuse to issue a relieving/experience certificate to coerce the employee, as blocking future employment violates principles against restraint of trade.", "remedy": "Send a Legal Notice demanding FnF clearance with 18% p.a. interest and immediate issuance of the relieving letter within 7-15 days, failing which lodge a complaint on the SAMADHAN portal or file a civil recovery/labour petition.", "portal": "https://samadhan.labour.gov.in"},
+    {"id": "WAGE_03", "category": "Employer Not Depositing Deducted PF (Provident Fund) or TDS", "act": "Employees' Provident Funds and Miscellaneous Provisions Act, 1952 & Income Tax Act, 1961", "section": "Section 14 & Section 14B EPF Act / Section 200 & 276B Income Tax Act", "summary": "Deducting EPF or TDS from an employee's salary slip but failing to deposit it with EPFO or the Income Tax Department within the statutory due date is a serious statutory default carrying penal damages and prosecution for the employer.", "remedy": "File an online grievance on EPFiGMS (for PF default) with salary slips showing deductions vs passbook entries, and report TDS mismatches to the Assessing Officer / TRACES cell alongside a formal notice to the employer.", "portal": "https://epfigms.gov.in"},
+    {"id": "NOTICE_01", "category": "Understanding & Replying to a Civil Legal Notice", "act": "Code of Civil Procedure, 1908 (CPC) & Bharatiya Sakshya Adhiniyam, 2023", "section": "General Pre-Litigation Notice Procedure", "summary": "A Legal Notice sent by an advocate is a formal communication warning of intended civil action—it is NOT a court summons, arrest warrant, or police order. However, ignoring it completely can sometimes be cited by the sender as lack of defence. Replying factually within the stated 15-day or 30-day window places your rebuttal on record.", "remedy": "1. Check who sent it, the date, and the specific claim demanded. 2. Gather contrarian proof (payment receipts, chats, emails). 3. Send a point-by-point 'Reply to Legal Notice' denying false allegations via Registered Post AD.", "portal": "Self-Reply via Registered Post AD or Consult Civil Advocate"},
+    {"id": "NOTICE_02", "category": "Cheque Bounce Notice (Section 138 NI Act)", "act": "Negotiable Instruments Act, 1881", "section": "Section 138 & Section 142", "summary": "If a cheque is dishonoured by a bank for 'Insufficient Funds' or 'Stop Payment', the payee must send a statutory written demand notice within 30 days of receiving the bank return memo, giving the drawer 15 days to pay the cheque amount. If unpaid after 15 days, a criminal/quasi-criminal complaint can be filed in Magistrate court within the next 30 days.", "remedy": "STRICT DEADLINE: If you received a Section 138 notice, either settle the valid debt within 15 days with written receipt or have a lawyer send a formal legal reply disputing legally enforceable debt. If a cheque paid to you bounced, dispatch a Section 138 notice within 30 days of the bank memo.", "portal": "https://ecourts.gov.in (Consult Advocate if Court Summons issued)"},
+    {"id": "NOTICE_03", "category": "Loan Recovery Harassment & Fake Court Notices by Agents", "act": "RBI Master Direction — Fair Practices Code", "section": "RBI Circular DOR.ORG.REC.65/21.04.158/2022-23 (Recovery Agent Guidelines)", "summary": "Banks, NBFCs, and digital lending apps are strictly prohibited from calling borrowers before 8:00 AM or after 7:00 PM, contacting relatives/colleagues, using abusive threats, or sending fake 'Police/Lok Adalat Arrest Notices' on WhatsApp to recover personal loans or credit card dues.", "remedy": "1. Save screenshots and call recordings. 2. Email the Bank/NBFC Nodal Grievance Officer citing RBI Fair Practices Code. 3. If unresolved or harassed immediately, file an online complaint on the RBI Integrated Ombudsman (CMS) Portal.", "portal": "https://cms.rbi.org.in"},
+    {"id": "BANK_01", "category": "Unauthorised UPI / Credit Card / Bank Fraud Transaction", "act": "Payment and Settlement Systems Act, 2007 & RBI Customer Protection Circular", "section": "RBI Circular DBR.No.Leg.BC.78/09.07.005/2017-18 (Zero & Limited Liability)", "summary": "If money is debited via an unauthorized electronic transaction due to a third-party breach (where you did not share OTP/PIN) and you notify the bank within 3 working days, you have Zero Liability and the bank must shadow-reverse the amount within 10 working days.", "remedy": "1. Immediately call 1930 (National Cybercrime Helpline) and log a complaint on cybercrime.gov.in to freeze the fraudster's account. 2. Notify your bank in writing within 3 days to get a complaint reference number. 3. Escalate to RBI Ombudsman (cms.rbi.org.in) if the bank delays beyond 30 days.", "portal": "https://cybercrime.gov.in (Dial 1930) & https://cms.rbi.org.in"},
+    {"id": "BANK_02", "category": "Wrongful CIBIL / Credit Score Reporting by Bank", "act": "Credit Information Companies (Regulation) Act, 2005 & RBI Compensation Framework", "section": "Section 21 CICRA & RBI Circular DoR.FIN.REC.49/20.16.003/2023-24", "summary": "Credit institutions and bureaus (CIBIL, Experian, Equifax, CRIF) must resolve customer credit report disputes within 30 calendar days. Failure to rectify inaccurate credit data or update closed loans within 30 days entitles the complainant to statutory compensation of Rs 100 per calendar day of delay.", "remedy": "1. Raise a formal dispute on the Credit Bureau portal and email the lender's nodal officer with your No Objection Certificate (NOC) / loan closure proof. 2. After 30 days, claim Rs 100/day penalty via the RBI CMS Ombudsman portal.", "portal": "https://cms.rbi.org.in"},
+    {"id": "TRAFFIC_01", "category": "Wrongful Traffic E-Challan (Camera Error / Cloned Plate)", "act": "Motor Vehicles Act, 1988 (as amended in 2019)", "section": "Section 136A (Electronic Monitoring) & Virtual Court Grievance Mechanism", "summary": "If you receive an SMS e-challan for a traffic violation your vehicle did not commit (e.g., wrong city, faulty ANPR camera reading, or someone else violating rules), you do not have to pay the fine blindly and can contest it online before it is settled.", "remedy": "1. Raise an online grievance with photo evidence on the official Parivahan E-Challan Grievance portal. 2. If already forwarded to Virtual Court (vcourts.gov.in), click 'Contest Case' to submit your explanation before the Traffic Magistrate.", "portal": "https://echallan.parivahan.gov.in/gsticket & https://vcourts.gov.in"},
+    {"id": "TELECOM_01", "category": "Unauthorised Telecom / Broadband Billing & Porting Refusal", "act": "TRAI Consumer Regulations", "section": "TRAI Telecom Consumers Complaint Redressal Regulations, 2012", "summary": "Telecom and broadband operators must resolve billing disputes, security deposit refunds for returned routers, and wrongful SIM porting rejections within stipulated timelines under a two-tier Appellate Authority framework.", "remedy": "1. Obtain a docket number from the operator's customer care. 2. Escalate to the operator's Appellate Authority. 3. Lodge a grievance on the Department of Telecommunications PGPortal / Sanchar Saathi portal or National Consumer Helpline.", "portal": "https://sancharsaathi.gov.in & https://consumerhelpline.gov.in"},
+    {"id": "INSURANCE_01", "category": "Wrongful Health or Motor Insurance Claim Rejection", "act": "Insurance Act, 1938 & IRDAI Regulations", "section": "Insurance Ombudsman Rules, 2017 & IRDAI Policyholder Protection Regulations", "summary": "Insurance companies cannot arbitrarily reject valid health or motor claims on technicalities or non-material pre-existing conditions if the policy has been active continuously beyond the statutory moratorium period.", "remedy": "1. File a written representation to the Insurer's Grievance Redressal Officer (GRO). 2. After 15 days, file on IRDAI Bima Bharosa Portal. 3. File a free complaint before the Insurance Ombudsman (for claims up to Rs 50 Lakhs) or Consumer Commission.", "portal": "https://bimabharosa.irdai.gov.in & https://cioins.co.in"},
+    {"id": "RTI_01", "category": "Delayed Government Service, Passport, EPFO, or Municipal Action", "act": "Right to Information Act, 2005 & CPGRAMS Framework", "section": "Section 6(1) & Section 7(1) RTI Act, 2005", "summary": "Every Indian citizen has the statutory right to inspect and seek certified records, file noting, daily progress reports, and reasons for administrative delay from any Public Authority within 30 days for a nominal fee of Rs 10.", "remedy": "File an online RTI application under Section 6(1) on rtionline.gov.in asking for the daily progress report on your pending application, alongside a CPGRAMS grievance on pgportal.gov.in.", "portal": "https://rtionline.gov.in & https://pgportal.gov.in"},
+    {"id": "ESCALATE_CRIMINAL", "category": "Criminal Offence, Physical Assault, Extortion, or Police Arrest/Bail", "act": "Bharatiya Nyaya Sanhita (BNS), 2023 & Bharatiya Nagarik Suraksha Sanhita (BNSS), 2023", "section": "Section 173 BNSS (Zero FIR / e-FIR) & Section 480/482 BNSS (Bail Provisions)", "summary": "Matters involving physical violence, threats to life, sexual harassment, extortion, non-bailable police FIRs, or custodial arrest carry severe penal consequences and replaced the old IPC/CrPC framework on July 1, 2024 with BNS and BNSS.", "remedy": "HARD STOP — HUMAN LAWYER REQUIRED: Do not rely on automated self-help notices. For immediate danger dial 112. To file a cognizable criminal complaint, file a Zero FIR under Section 173 BNSS at the nearest Police Station and immediately consult a licensed Criminal Defense Advocate or call NALSA Free Legal Aid Helpline at 15100.", "portal": "Emergency 112 / NALSA Free Legal Aid Helpline 15100"},
+    {"id": "ESCALATE_FAMILY_PROP", "category": "Divorce, Child Custody, Ancestral Property Partition, or High-Value Litigation", "act": "Hindu Marriage Act / Special Marriage Act / Indian Succession Act & Civil Procedure Code", "section": "Contested Matrimonial & Title Suit Jurisdiction", "summary": "Disputes over land/house ownership titles, ancestral property partition, contested divorce, domestic violence protection orders, or civil recovery claims exceeding Rs 10 Lakhs involve complex evidentiary trials, court fees, and personal laws.", "remedy": "HARD STOP — HUMAN LAWYER REQUIRED: Automated AI templates cannot substitute for courtroom pleadings in title or family suits. Approach your District Legal Services Authority (DLSA / Helpline 15100) for free mediation/legal aid or retain a practicing Civil/Family Court Advocate.", "portal": "https://nalsa.gov.in (Helpline 15100)"}
+]
 
-def get_embeddings(texts: List[str], model_name: str) -> Tuple[np.ndarray, int]:
-    """
-    Generates embeddings for a list of texts using a pre-trained SBERT model.
-    
-    Args:
-        texts: List of text strings to embed.
-        model_name: Name of the SentenceTransformer model.
-    
-    Returns:
-        Tuple of embeddings (numpy array) and embedding dimension.
-    """
-    try:
-        model = SentenceTransformer(model_name)
-        with st.spinner("Generating embeddings..."):
-            embeddings = model.encode(texts, show_progress_bar=False, convert_to_numpy=True)
-        return embeddings, model.get_sentence_embedding_dimension()
-    except Exception as e:
-        logger.error(f"Error generating embeddings: {e}")
-        raise
+class LegalRAGPipeline:
+    def __init__(self, data_path="data/legal_data.jsonl", index_path="data/faiss.index", meta_path="data/metadata.json"):
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        self.data_path = os.path.join(base_dir, data_path)
+        self.index_path = os.path.join(base_dir, index_path)
+        self.meta_path = os.path.join(base_dir, meta_path)
+        self.embedder = SentenceTransformer("all-MiniLM-L6-v2")
+        self.reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
+        self.records = list(DEFAULT_RECORDS)
+        self.index = None
+        self._load_or_build_index()
 
-def build_and_save_faiss_index(embeddings: np.ndarray, texts: List[str], embedding_dimension: int, index_path: str, metadata_path: str) -> faiss.IndexFlatL2:
-    """
-    Builds and saves a FAISS index along with metadata.
-    
-    Args:
-        embeddings: Numpy array of embeddings.
-        texts: List of original texts.
-        embedding_dimension: Dimension of the embeddings.
-        index_path: Path to save the FAISS index.
-        metadata_path: Path to save the metadata.
-    
-    Returns:
-        FAISS index object.
-    """
-    try:
-        index = faiss.IndexFlatL2(embedding_dimension)
-        index.add(embeddings)
-        faiss.write_index(index, index_path)
-        with open(metadata_path, 'w', encoding='utf-8') as f:
-            json.dump(texts, f, ensure_ascii=False, indent=2)
-        logger.info(f"Saved FAISS index to {index_path} and metadata to {metadata_path}")
-        return index
-    except Exception as e:
-        logger.error(f"Error building FAISS index: {e}")
-        raise
+    def _load_or_build_index(self):
+        os.makedirs(os.path.dirname(self.data_path), exist_ok=True)
+        with open(self.data_path, "w", encoding="utf-8") as f:
+            for r in self.records:
+                f.write(json.dumps(r, ensure_ascii=False) + "\n")
 
-def load_faiss_index_and_metadata(index_path: str, metadata_path: str) -> Tuple[faiss.IndexFlatL2, List[str]]:
-    """
-    Loads a FAISS index and its corresponding metadata.
-    
-    Args:
-        index_path: Path to the FAISS index file.
-        metadata_path: Path to the metadata file.
-    
-    Returns:
-        Tuple of FAISS index and metadata list.
-    """
-    try:
-        index = faiss.read_index(index_path)
-        with open(metadata_path, 'r', encoding='utf-8') as f:
-            metadata = json.load(f)
-        logger.info(f"Loaded FAISS index from {index_path} and metadata from {metadata_path}")
-        return index, metadata
-    except FileNotFoundError as e:
-        logger.error(f"FAISS index or metadata not found: {e}")
-        raise
-    except Exception as e:
-        logger.error(f"Error loading FAISS index or metadata: {e}")
-        raise
-
-@st.cache_resource
-def initialize_rag_components():
-    """Initializes RAG components (data, index, models)."""
-    from src.data_processing import load_data_structured
-    structured_ipc_data = load_data_structured(Config.DATA_FILE)
-    ipc_data_for_embeddings = [item["original_text"] for item in structured_ipc_data]
-
-    if not os.path.exists(Config.VECTOR_DB_PATH) or not os.path.exists(Config.METADATA_PATH):
-        ipc_embeddings, embedding_dim = get_embeddings(ipc_data_for_embeddings, Config.EMBEDDING_MODEL_NAME)
-        ipc_faiss_index = build_and_save_faiss_index(
-            ipc_embeddings, ipc_data_for_embeddings, embedding_dim, Config.VECTOR_DB_PATH, Config.METADATA_PATH
-        )
-        ipc_metadata = ipc_data_for_embeddings
-    else:
-        ipc_faiss_index, ipc_metadata = load_faiss_index_and_metadata(Config.VECTOR_DB_PATH, Config.METADATA_PATH)
-        
-    retrieval_model = SentenceTransformer(Config.EMBEDDING_MODEL_NAME)
-    re_ranker_model = CrossEncoder(Config.RE_RANKER_MODEL_NAME)
-    
-    return structured_ipc_data, ipc_faiss_index, ipc_metadata, retrieval_model, re_ranker_model
-
-def retrieve_relevant_ipc_hybrid(
-    query: str,
-    structured_ipc_data: List[Dict],
-    faiss_index: faiss.IndexFlatL2,
-    metadata: List[str],
-    embedding_model: SentenceTransformer,
-    re_ranker_model: CrossEncoder,
-    k_initial: int,
-    k_final: int
-) -> List[str]:
-    """
-    Retrieves relevant IPC sections using a hybrid approach.
-    
-    Args:
-        query: User query string.
-        signed_ipc_data: List of structured IPC data.
-        faiss_index: FAISS index for semantic search.
-        metadata: Metadata associated with FAISS index.
-        embedding_model: SentenceTransformer model for embeddings.
-        re_ranker_model: CrossEncoder model for re-ranking.
-        k_initial: Number of initial documents to retrieve.
-        k_final: Number of final documents after re-ranking.
-    
-    Returns:
-        List of relevant IPC section texts.
-    """
-    import re
-    min_years_threshold = None
-    punishment_years_filter_match = re.search(r'greater than (\d+)\s*(?:years|year)?', query, re.IGNORECASE)
-    if punishment_years_filter_match:
-        min_years_threshold = int(punishment_years_filter_match.group(1))
-        st.info(f"Applying numerical filter: Punishment greater than {min_years_threshold} years.")
-        filtered_by_condition = [
-            item["original_text"] for item in structured_ipc_data
-            if item["punishment_years"] is not None and item["punishment_years"] > min_years_threshold
+        texts = [
+            f"{r.get('category', '')} | {r.get('act', '')} | {r.get('section', '')} | {r.get('summary', '')} | {r.get('remedy', '')}"
+            for r in self.records
         ]
-        if filtered_by_condition:
-            sentence_pairs = [[query, doc] for doc in filtered_by_condition]
-            if sentence_pairs:
-                rerank_scores = re_ranker_model.predict(sentence_pairs)
-                scored_documents = sorted(list(zip(filtered_by_condition, rerank_scores)), key=lambda x: x[1], reverse=True)
-                return [doc for doc, score in scored_documents[:20]]
-            return []
-        st.warning("Numerical filter applied but found no matching sections. Falling back to general search.")
+        embeddings = self.embedder.encode(texts, convert_to_numpy=True, normalize_embeddings=True)
+        dim = embeddings.shape[1]
+        self.index = faiss.IndexFlatIP(dim)
+        self.index.add(embeddings)
 
-    retrieved_sections = []
-    query_lower = query.lower()
-    
-    # Keyword matching
-    keyword_matches = []
-    if 'child' in query_lower or 'minor' in query_lower:
-        for item in structured_ipc_data:
-            if 'child' in item["original_text"].lower() or 'minor' in item["original_text"].lower():
-                keyword_matches.append(item["original_text"])
+        faiss.write_index(self.index, self.index_path)
+        with open(self.meta_path, "w", encoding="utf-8") as mf:
+            json.dump(self.records, mf, indent=2)
 
-    # Exact IPC section match
-    match = re.search(r'IPC\s*(\d+[A-Z]*)', query, re.IGNORECASE)
-    if match:
-        section_id_query = f"IPC {match.group(1).upper()}"
-        for section_text in metadata:
-            if section_text.lower().startswith(section_id_query.lower()):
-                retrieved_sections.append(section_text)
-                break
-    
-    # Semantic search
-    query_embedding = embedding_model.encode([query], convert_to_numpy=True)
-    distances, indices = faiss_index.search(query_embedding, k_initial)
-    
-    semantic_matches = []
-    for i, idx in enumerate(indices[0]):
-        if 0 <= idx < len(metadata):
-            semantic_matches.append(metadata[idx])
-            
-    combined_results_for_reranking = []
-    seen = set()
-    for item in keyword_matches + retrieved_sections + semantic_matches:
-        if item not in seen:
-            combined_results_for_reranking.append(item)
-            seen.add(item)
+    def retrieve(self, query: str, top_k: int = 3):
+        q_emb = self.embedder.encode([query], convert_to_numpy=True, normalize_embeddings=True)
+        scores, indices = self.index.search(q_emb, min(top_k * 2, len(self.records)))
+        candidates = [self.records[idx] for idx in indices[0] if idx != -1]
 
-    if not combined_results_for_reranking:
-        return []
+        pairs = [[query, f"{c.get('category', '')} {c.get('act', '')} {c.get('summary', '')}"] for c in candidates]
+        rerank_scores = self.reranker.predict(pairs)
+        ranked = sorted(zip(candidates, rerank_scores), key=lambda x: x[1], reverse=True)
+        return [item[0] for item in ranked[:top_k]]
 
-    sentence_pairs = [[query, doc] for doc in combined_results_for_reranking]
-    rerank_scores = re_ranker_model.predict(sentence_pairs)
-    scored_documents = sorted(list(zip(combined_results_for_reranking, rerank_scores)), key=lambda x: x[1], reverse=True)
-    return [doc for doc, score in scored_documents[:k_final]]
-
-def generate_answer_with_ollama(query: str, retrieved_ipc_sections: List[str], ollama_model: str) -> str:
-    """
-    Generates an answer using Ollama LLM based on retrieved IPC sections.
-    
-    Args:
-        query: User query string.
-        retrieved_ipc_sections: List of relevant IPC section texts.
-        ollama_model: Name of the Ollama model.
-    
-    Returns:
-        Generated response string.
-    """
-    if not retrieved_ipc_sections:
-        return "Mujhe aapki query ke liye apne database mein koi relevant IPC section nahi mila. Kya aap kripya ise doosre tarike se poochh sakte hain ya aur details de sakte hain?"
-
-    context = "\n".join(retrieved_ipc_sections)
-    prompt = f"""
-    You are an expert, helpful, and informative legal assistant specializing in the Indian Penal Code (IPC).
-    Your main goal is to **explain IPC concepts and punishments in very simple and easy-to-understand language**, as if you are explaining to a 10-year-old.
-    Where possible, avoid complex legal jargon. If absolutely necessary, explain such terms concisely.
-
-    **You must answer ONLY based on the IPC sections provided below.**
-    **Your absolute top priority is to list every single IPC section and its punishment that matches the user's criteria.** Do not omit any relevant section from the provided context.
-    For each relevant section, clearly state its **number, name (title), and punishment**.
-    **Elaborate slightly on the answer, explaining each section a bit more, to ensure the user understands better.**
-    If the provided sections do not contain enough information to fully answer the query, clearly state that you do not have specific details based on the information given. Do not create any information on your own (do not hallucinate).
-
-    IPC Sections:
-    {context}
-
-    User Query: {query}
-
-    Answer:
-    """
-    try:
-        full_response_content = ""
-        response_placeholder = st.empty()
-        stream = ollama.chat(
-            model=ollama_model,
-            messages=[{'role': 'user', 'content': prompt}],
-            options={'temperature': 0.3},
-            stream=True
-        )
-        for chunk in stream:
-            if 'content' in chunk['message']:
-                full_response_content += chunk['message']['content']
-                response_placeholder.markdown(full_response_content)
-        return full_response_content
-    except ollama.ResponseError as e:
-        logger.error(f"Ollama error: {e}")
-        if "connection refused" in str(e).lower():
-            return "Maaf kijiye, main Ollama se connect nahi kar pa raha. Kripya confirm karein ki Ollama chal raha hai (`ollama serve`) aur model download ho gaya hai (`ollama run llama3.1`)."
-        elif "model 'llama3.1' not found" in str(e).lower():
-            return f"Maaf kijiye, '{ollama_model}' model nahi mila. Kripya confirm karein ki yeh Ollama mein download ho gaya hai (`ollama run {ollama_model}`)."
-        return f"Ollama mein ek error aa gayi: {e}"
-    except Exception as e:
-        logger.error(f"Unexpected error: {e}")
-        return f"Ek anapekshit error aa gayi: {e}"
-
+    def verify_citations(self, generated_text: str, retrieved_docs: list) -> dict:
+        allowed_blob = " ".join([f"{d.get('act', '')} {d.get('section', '')}" for d in retrieved_docs]).lower()
+        mentioned_sections = re.findall(r"section\s+(\d+[a-zA-Z]*)", generated_text, flags=re.IGNORECASE)
+        unverified = [sec for sec in mentioned_sections if sec.lower() not in allowed_blob]
+        return {
+            "is_verified": len(unverified) == 0,
+            "unverified_sections_detected": unverified,
+            "allowed_sources": [f"{d.get('act', '')} ({d.get('section', '')})" for d in retrieved_docs]
+        }

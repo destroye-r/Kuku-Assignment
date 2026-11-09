@@ -1,7 +1,7 @@
-ollama
-sentence-transformers
-faiss-cpu
-python-dotenv
-numpy
-pyyaml
 streamlit
+faiss-cpu
+sentence-transformers
+google-genai
+python-dotenv
+requests
+numpy
