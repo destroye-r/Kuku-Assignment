@@ -1,273 +1,113 @@
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+# ⚖️ NyayMitra: Everyday AI Legal Triage & Action Assistant
 
-[![Python Version](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/)
+**Submission for Kuku AI Generalist Assignment — Problem 2: Build an AI Lawyer**
 
-[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://streamlit.io)
+NyayMitra is a multilingual (English, Hindi, and Hinglish) legal triage and self-help action assistant designed for everyday citizens in India. Instead of acting as a generic legal Q&A chatbot that risks hallucinating laws, NyayMitra combines a **two-stage Retrieval-Augmented Generation (RAG) pipeline** (`FAISS` + `Cross-Encoder` re-ranking) with **deterministic citation guardrails** and a **4-step action workflow** covering everyday civil and consumer disputes.
 
-[![Ollama](https://img.shields.io/badge/Ollama-black?style=flat&logo=ollama&logoColor=white)](https://ollama.com/)
+---
 
+## 🎯 Problem Scope & What It Covers
 
-# IPC Legal Chatbot
+Most citizens give up on everyday legal disputes because lawyers feel too expensive, paperwork is intimidating, and procedures are unclear. NyayMitra focuses in depth on **8 high-frequency everyday civil/consumer dispute categories** while enforcing a hard escalation boundary for criminal and complex litigation matters:
 
-## Overview
+### ✅ In-Scope (Self-Help Triage & Document Generation)
+1. **Landlord & Security Deposit Disputes:** Unlawful withholding of rent deposits, arbitrary painting/cleaning deductions, and unlawful eviction notices (*Transfer of Property Act, 1882; Indian Contract Act, 1872; Model Tenancy Act, 2021*).
+2. **Consumer Refunds & Defective Goods:** E-commerce refund refusals, unfair EdTech/gym subscription contracts, and flight cancellation compensation (*Consumer Protection Act, 2019; E-Commerce Rules, 2020; DGCA CAR*).
+3. **Unpaid Salary & Full and Final (FnF) Settlement:** Delayed monthly wages, withheld relieving letters, and unremitted PF/TDS deductions (*Payment of Wages Act, 1936; Contract Act Sec 27; EPF Act*).
+4. **Legal Notices & Recovery Harassment:** Decoding pre-litigation civil notices, Section 138 NI Act cheque bounce timelines, and RBI guidelines against recovery agent harassment.
+5. **Banking, UPI Fraud & CIBIL Disputes:** RBI Zero-Liability unauthorized electronic transaction rules (1930 helpline workflow) and ₹100/day statutory compensation for delayed credit bureau rectification.
+6. **Traffic E-Challans, Insurance Rejections, Telecom & RTI:** Contesting faulty camera challans on Virtual Courts, Insurance Ombudsman escalations, and filing Section 6(1) RTI applications.
 
-- The IPC Legal Chatbot is a sophisticated Streamlit-based application designed to democratize access to legal information, specifically concerning the Indian Penal Code (IPC). It empowers users to quickly find simple and accurate explanations of IPC sections through an intuitive chat interface.
+### 🚨 Out-of-Scope (Hard Escalation to Human Lawyer)
+* **Criminal Offences, Physical Assault, Police FIRs & Bail:** Covered under *Bharatiya Nyaya Sanhita (BNS), 2023* and *Bharatiya Nagarik Suraksha Sanhita (BNSS), 2023*.
+* **Contested Matrimonial, Child Custody, Ancestral Property Partition, or High-Value Claims (> ₹10 Lakhs).**
+* *Behavior:* When a query triggers these boundaries, NyayMitra displays a red **Human Lawyer Required** alert and directs the user to Emergency 112, a licensed Advocate, or the **NALSA Free Legal Aid Helpline (15100)**.
 
-- At its core, this chatbot utilizes a Retrieval-Augmented Generation (RAG) pipeline. This cutting-edge architecture combines the precision of information retrieval with the generative power of Large Language Models (LLMs). It leverages FAISS for efficient similarity search, Sentence-Transformers for converting text into meaningful embeddings, and Ollama to run the powerful Llama 3.1 model locally for generating concise and relevant legal explanations.
+---
 
-- Data Coverage: The chatbot's knowledge base specifically covers IPC sections ranging from **121A to 511.**
+## 🛡️ Architecture: How We Avoid Invented Laws & Hallucinations
 
-## Features
+| Layer | Handled By | Purpose |
+| :--- | :--- | :--- |
+| **1. Curated Statutory Knowledge Base** | `data/legal_data.jsonl` | Stores verified Indian statutory sections, remedies, and official government portals (`e-Jagriti`, `SAMADHAN`, `RBI CMS`, `1930`). |
+| **2. Bi-Encoder Vector Search** | `all-MiniLM-L6-v2` + `FAISS` (`IndexFlatIP`) | Retrieves top candidate statutory records using normalized cosine similarity. |
+| **3. Cross-Encoder Re-Ranking** | `cross-encoder/ms-marco-MiniLM-L-6-v2` | Re-scores candidate pairs `(user_query, statute)` to select the top verified provisions before LLM generation. |
+| **4. Strict Context Lock & Trap Detection** | System Prompt Guardrail (`src/legal_workflows.py`) | Prohibits citing any Act, Section, or case law outside the retrieved JSON context and explicitly corrects fake laws injected by the user. |
+| **5. Deterministic Citation Sanitizer** | Regex Verifier (`verify_citations` in `src/rag_pipeline.py`) | Parses all `Section X` references in the LLM output and cross-checks them against the retrieved statute metadata. |
+| **6. Swappable LLM Wrapper** | `SwappableLLM` (`src/llm_provider.py`) | Supports seamless switching between **Gemini (`gemini-3.8-flash`)**, **Groq (`llama-3.3-70b-versatile`)**, and local **Ollama (`llama3.1`)** via the UI sidebar or `.env`. |
 
-- Intelligent IPC Explanations: Get simple, easy-to-understand explanations for complex Indian Penal Code sections.
+---
 
-- Retrieval-Augmented Generation (RAG): Combines efficient document retrieval with advanced LLM generation for highly accurate and contextual answers.
+## 📂 Project Structure
 
-- Local LLM Integration: Powered by the Llama 3.1 model, run locally via Ollama, ensuring data privacy and reducing reliance on cloud APIs.
-
-- FAISS for Vector Search: Utilizes Facebook AI Similarity Search (FAISS) for lightning-fast retrieval of relevant IPC sections from your knowledge base.
-
-- Sentence Embeddings: Employs Sentence-Transformers to create dense vector representations of legal texts and user queries.
-
-- Interactive Streamlit UI: A clean and user-friendly web interface for a seamless conversational experience.
-
-- Dynamic Data Handling: Automatically generates and caches FAISS index and metadata on the first run, optimizing subsequent performance.
-
-- Comprehensive Logging: Detailed logging (to console and file) for monitoring and debugging, configured via logging_config.yaml.
-
-## Getting Started
-
-You have multiple options to run the IPC Legal Chatbot: an Automated Setup (highly recommended for ease), a Manual Setup for more control, or a Docker Deployment for containerization.
-
-**Prerequisites**
-
-Ensure you have the following installed on your system:
-
-- Git: For cloning the repository.
-
-[Download & Install Git](https://git-scm.com/downloads)
-
-- Python 3.8+: The application requires Python 3.8 or a newer version.
-
-[Download Python](https://www.python.org/downloads/)
-
-- Ollama: This is crucial for running the llama 3.1 LLM locally.
-
-[Install Ollama](https://ollama.com/download) - Follow the official instructions for your operating system.
-
-- Docker: (Only if you choose Docker Deployment) For building and running the containerized application.
-
-[Install Docker Engine](https://docs.docker.com/engine/install/) 
-
-## 1. Clone the Repository
-
-Begin by cloning the project repository to your local machine:
-
-```
-git clone https://github.com/ashankgupta/ipc_legal_chatbot.git
-cd ipc_legal_chatbot
-```
-
-## 2. Set Up Ollama and Llama 3.1 Model
-
-- The chatbot relies on the Llama 3.1 model running via Ollama.
-
-- Ensure Ollama is running: Make sure the Ollama server is active in your background. You can usually start it by simply installing it or running ollama serve if it's not set to auto-start.
-
-- Download the llama 3.1 model: Pull the specific model required by the application:
-
-```
-ollama run llama3.1
-```
-- This command will download the model if it's not already present and then start an interactive session. You can simply close this session (/bye) once the download is complete.
-
-## Running the Application
-
-You have three options to run the IPC Legal Chatbot:
-
-### Option A: Automated Setup (Recommended for Ease)
-
-This is the simplest way to get started. These scripts will handle repository cloning, Ollama installation (if missing), Llama 3.1 model download, Python virtual environment setup, dependency installation (using uv for speed), and finally launch the application.
-
-#### For Linux / macOS users:
-
-Download the install.sh file from the latest GitHub Release of this repository.
-
-- Open your terminal, navigate to the download directory.
-
-- Make the script executable:
-```
-chmod +x install.sh
-```
-Run the script:
-```
-./install.sh
-```
-
-#### For Windows users:
-
-- Download the install.bat file from the latest GitHub Release of this repository.
-
-- Locate the downloaded file in File Explorer.
-
-- Double-click on install.bat to run it.
-
-- Important Note: For best results, ensure Git and Python 3.8+ are already installed and accessible in your system's PATH. The .bat script relies on these being pre-installed.
-
-### Option B: Manual Setup (Local Development)
-
-Choose this option if you prefer manual control or if the automated script encounters issues.
-
-- Install uv (Fast Python Package Manager):
-```
-pip install uv
-
-Ensure uv is in your system's PATH. This is typically managed by pip.
-```
-
-Install Python Dependencies:
-
-#### Create and activate a virtual environment (recommended)
-```
-python3 -m venv venv
-source venv/bin/activate  # On Linux/macOS
-venv\Scripts\activate   # On Windows
-```
-
-#### Install Python packages from requirements.txt
-```
-uv pip install -r requirements.txt
-```
-#### Run the Streamlit application:
-```
-streamlit run app.py
-```
-
-Your application should open in your default web browser at http://localhost:8501.
-
-
-### Option C: Run with Docker (Recommended for Deployment)
-
-Using Docker encapsulates all dependencies and ensures a consistent environment, making it ideal for deployment.
-
-Build the Docker Image:
-Navigate to the root directory of your project (where the Dockerfile is located) and run the following command:
-```
-docker build -t ipc_legal_chatbot .
-```
-This command will:
-
-- Build the Docker image named ipc_legal_chatbot.
-
-- Install all necessary system packages and Python dependencies.
-
-- Copy your application code into the image.
-
-
-Run the Docker Container:
-Once the image is built, you can run the application using:
-
-```
-docker run -p 8501:8501 legal_chatbot
-```
-
-- docker run: Starts a new container from the legal_chatbot image.
-- -p 8501:8501: Maps port 8501 of your local machine to port 8501 inside the container, where Streamlit is running.
-
-After running the command, open your web browser and navigate to http://localhost:8501. You should see the IPC Legal Chatbot interface.
-
-## Project Structure
-
-```
+```text
 ipc_legal_chatbot/
-├── app.py                      # Main Streamlit application entry point
-├── src/                        # Source code for modular components
-│   ├── __init__.py             # Python package initializer
-│   ├── data_processing.py      # Handles loading, parsing, and chunking of legal data
-│   ├── rag_pipeline.py         # Implements the core Retrieval-Augmented Generation logic
-│   ├── utils.py                # Contains various utility functions
-│   └── config.py               # Stores configuration settings and constants
-├── data/                       # Directory for legal data and generated artifacts
-│   ├── legal_data.jsonl        # The raw legal knowledge base (JSON Lines format)
-│   ├── ipc_faiss.index         # (Auto-generated) FAISS index for efficient retrieval
-│   └── ipc_metadata.json       # (Auto-generated) Metadata associated with the FAISS index
-├── requirements.txt            # Lists all Python dependencies
-├── .env                        # Environment variables (e.g., API keys, model paths)
-├── logging_config.yaml         # Configuration file for Python's logging module
-├── Dockerfile                  # Docker instructions to build the container image
-├── .dockerignore               # Specifies files/directories to exclude from Docker build context
-└── README.md                   # This comprehensive project documentation
-```
+├── app.py                      # Main Streamlit application (4 Action Tabs + Model Swapper Sidebar)
+├── src/
+│   ├── __init__.py
+│   ├── config.py               # Environment & default model configuration
+│   ├── rag_pipeline.py         # Self-healing dataset loader, FAISS indexer, Cross-Encoder & Regex Citation Verifier
+│   ├── llm_provider.py         # Unified model-agnostic wrapper (Gemini, Groq, Ollama)
+│   └── legal_workflows.py      # Structured JSON case builder, notice drafter & adversarial roleplay coach
+├── data/
+│   ├── legal_data.jsonl        # 20 verified everyday Indian legal & escalation records
+│   ├── faiss.index             # Auto-generated FAISS vector index cache
+│   └── metadata.json           # Auto-generated statutory metadata cache
+├── raw_outputs/                # Unedited JSON outputs across 5 diverse evaluation test cases
+├── generate_raw_outputs.py     # Batch runner to reproduce all 5 raw test case outputs
+├── requirements.txt            # Python dependencies
+└── README.md                   # Project documentation
+🚀 Quickstart: How to Run Locally
+1. Clone & Set Up Virtual Environment
+Bash
+git clone <your-repo-url>
+cd ipc_legal_chatbot
 
-## Usage
+# Create and activate virtual environment
+python -m venv venv
+# Windows:
+.\venv\Scripts\activate
+# macOS / Linux:
+source venv/bin/activate
+2. Install Dependencies
+Bash
+pip install -r requirements.txt
+(Or directly: pip install streamlit faiss-cpu sentence-transformers google-genai python-dotenv requests numpy)
 
-- Open the App: Access the application in your web browser (typically at http://localhost:8501).
+3. Configure API Keys (.env or UI Sidebar)
+Create a .env file in the project root (or enter your key directly in the Streamlit sidebar at runtime):
 
-- Enter Your Query: Type a question or statement related to Indian Penal Code sections into the input field. Examples:
+Code snippet
+GEMINI_API_KEY=your_gemini_api_key_here
+GROQ_API_KEY=your_optional_groq_api_key_here
+4. Launch the Application
+Bash
+streamlit run app.py
+Open http://localhost:8501 in your browser.
 
-```
-"What is IPC section 302?"
+Note on First Run: On initial startup, SentenceTransformer and CrossEncoder will build and cache data/faiss.index and data/metadata.json automatically (~10–15 seconds). Subsequent runs load instantaneously from cache.
 
-"Explain crimes against children under IPC."
+🔄 Swapping Models During Evaluation
+This project is built so evaluators can test new inputs or swap models in seconds:
 
-"What are the punishments for theft?"
-```
+Via the UI Sidebar: Select gemini (default: gemini-3.8-flash), groq (default: llama-3.3-70b-versatile), or ollama (default: llama3.1), type any model identifier in the Model Name box, and paste an API key.
 
-- Get Explanations: The chatbot will process your query, retrieve the most relevant IPC sections from its knowledge base, and generate a simplified explanation using the llama 3.1 model
+Via Code (src/llm_provider.py): Instantiate SwappableLLM(provider="...", model_name="...", api_key="...").
 
-## Dependencies
+🧪 Reproducing the Test Cases (raw_outputs/)
+Five end-to-end test cases are included to evaluate multilingual parsing, missing-evidence detection, escalation boundaries, and adversarial hallucination resistance:
 
-- Python 3.8+
+test_1_hinglish_landlord_deposit.json — Hinglish security deposit dispute with arbitrary painting deductions.
 
-- Streamlit: For the interactive web interface.
+test_2_ecommerce_defective_refund.json — Defective television delivery with closed support ticket.
 
-- Sentence-Transformers: For generating embeddings.
+test_3_unpaid_salary_fnf.json — Withheld 2 months' salary and relieving letter after serving full notice period.
 
-- FAISS-CPU: For efficient vector similarity search.
+test_4_out_of_scope_criminal_escalation.json — Physical assault & police detention query triggering the Hard Stop Human Lawyer guardrail.
 
-- PyTorch (CPU): Underlying framework for Sentence-Transformers.
+test_5_adversarial_fake_law_trap.json — Prompt injecting a fabricated law ("Section 999 of the Indian Tenant Revenge Act, 2022") to verify that the system corrects the user rather than agreeing with false premises.
 
-- Ollama Python Library: To interact with the local Ollama server.
+To regenerate all 5 raw outputs from scratch:
 
-- Other utilities: langchain, pydantic, etc.
-
-Refer to requirements.txt for the complete and exact list of Python dependencies.
-
-## Frequently Asked Questions (FAQs)
-
-#### Q What is the IPC Legal Chatbot, and what kind of information does it provide?
-
-```
-The IPC Legal Chatbot is an AI-powered Streamlit application designed to simplify sections of the Indian Penal Code (IPC). It gives you clear, concise, and contextual explanations for IPC sections, specifically covering 121A to 511. It's a tool for quick understanding, not a substitute for professional legal advice.
-```
-
-#### Q Why do I need to install Ollama separately? Can't the chatbot just work on its own?
-
-```
-The chatbot uses llama 3.1, a powerful Large Language Model (LLM), to generate its explanations. Ollama is crucial because it lets you run this LLM directly on your local machine. This keeps your data private and usually gives you faster responses without needing external cloud services. Your chatbot connects to your local Ollama server, which hosts the llama 3.1 model
-```
-
-#### Q How can I update the legal data the chatbot uses, or add new IPC sections?
-
-```
-You can update the chatbot's knowledge by modifying or replacing the legal_data.jsonl file located in the data/ directory of your project. The application is designed to automatically re-generate its FAISS index (ipc_faiss.index) and metadata (ipc_metadata.json) when it detects changes or missing files in data/ on startup. After updating legal_data.jsonl, simply restart the application (or rebuild/rerun your Docker container) for the changes to take effect.
-```
-
-## Notes
-
-- Data Format: Ensure that legal_data.jsonl is correctly formatted with legal sections that the RAG pipeline can effectively process.
-
-- Index Generation: The ipc_faiss.index and ipc_metadata.json files are automatically created and cached in the data/ directory upon the first run of the application. This significantly speeds up subsequent startups.
-
-- Configuration: Adjust environment variables in the .env file for custom model paths, logging levels, or other application-specific settings.
-
-- Logging: Application logs are configured via logging_config.yaml and are outputted to ipc_legal_chatbot.log as well as the console, aiding in debugging and monitoring.
-
-## Contributing
-
-- Contributions, issues, and feature requests are highly welcome! Feel free to check the issues page.
-
-## License
-
-- This project is open-source and available under the MIT License.
-
+Bash
+python generate_raw_outputs.py
